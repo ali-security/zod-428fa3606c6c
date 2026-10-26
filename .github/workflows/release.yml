@@ -2,13 +2,7 @@
 
 name: Release on npm
 on:
-  push:
-    branches:
-      - main
-    paths:
-      - "packages/zod/package.json"
-      - "packages/zod/src/**"
-      - ".github/workflows/release.yml"
+  workflow_dispatch:
 
 jobs:
   test-node:

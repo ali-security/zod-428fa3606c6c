@@ -1,25 +1,30 @@
 name: test
 
 on:
-  push:
-    branches:
-      - "main"
-  pull_request:
-    branches:
-      - main
-      - v4
+  workflow_dispatch:
+    inputs:
+      test-filter:
+        description: "Optional vitest filter; empty runs the full suite"
+        required: false
+        default: ""
 
 permissions:
   contents: read
 
+env:
+  NO_COLOR: "1"
+
 jobs:
   test-node:
     runs-on: ${{ matrix.os }}
+    timeout-minutes: 45
     strategy:
       matrix:
         os: [ubuntu-latest]
         node: ["lts/*"]
-        typescript: ["5.5", "latest"]
+        # "latest" pinned to 6.0.3, the TypeScript `latest` tag at the 4.4.3 release (2026-05-04);
+        # TS 7 (native, no JS compiler API) breaks the zshy build.
+        typescript: ["5.5", "6.0.3"]
     name: Test with TypeScript ${{ matrix.typescript }} on Node ${{ matrix.node }} (${{ matrix.os }})
     steps:
       - uses: actions/checkout@v4
@@ -30,12 +35,25 @@ jobs:
       - run: pnpm install
       - run: pnpm add typescript@${{ matrix.typescript }} -w
       - run: pnpm build
-      - run: pnpm test
+      - run: pnpm test ${{ inputs.test-filter }}
       - run: pnpm run --filter @zod/resolution test:all
+        if: ${{ inputs.test-filter == '' }}
       - run: pnpm run --filter @zod/integration test:all
+        if: ${{ inputs.test-filter == '' }}
+      - name: Pack
+        if: ${{ matrix.typescript == '5.5' }}
+        working-directory: ./packages/zod
+        run: npm pack
+      - uses: actions/upload-artifact@v4
+        if: ${{ matrix.typescript == '5.5' }}
+        with:
+          name: zod-tgz
+          path: packages/zod/zod-*.tgz
+          if-no-files-found: error
 
   lint:
     runs-on: ubuntu-latest
+    timeout-minutes: 20
     strategy:
       matrix:
         node: ["latest"]
@@ -52,6 +70,7 @@ jobs:
 
   check-circular:
     runs-on: ubuntu-latest
+    timeout-minutes: 20
     name: Check for circular dependencies
     steps:
       - uses: actions/checkout@v4

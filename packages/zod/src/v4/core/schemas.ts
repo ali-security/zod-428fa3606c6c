@@ -1627,6 +1627,33 @@ export interface $ZodArrayInternals<T extends SomeType = $ZodType> extends _$Zod
 
 export interface $ZodArray<T extends SomeType = $ZodType> extends $ZodType<any, any, $ZodArrayInternals<T>> {}
 
+// an oversized container fails its leading size checks before any element is parsed
+function capSize(inst: $ZodType, size: (input: any) => number): void {
+  const caps = util.sizeCaps(inst._zod.def.checks);
+  if (!caps.length) return;
+  const cap = Math.min(...caps.map((c) => c[0]));
+  const parse = inst._zod.parse;
+  inst._zod.parse = (payload, ctx) => {
+    const n = size(payload.value);
+    if (n > cap && !ctx?.skipChecks && ctx?.direction !== "backward") {
+      for (const [max, ch] of util.sizeCaps(inst._zod.def.checks)) {
+        if (n > max && ch._zod.def.when!(payload)) {
+          const start = payload.issues.length;
+          ch._zod.check(payload as ParsePayload<never>);
+          // the value is still the raw input, so no later check may read it
+          (payload.issues[start] as { continue?: boolean }).continue = false;
+          return payload;
+        }
+      }
+    }
+    return parse(payload, ctx);
+  };
+}
+
+const arraySize = (input: unknown): number => (Array.isArray(input) ? input.length : -1);
+const mapSize = (input: unknown): number => (input instanceof Map ? input.size : -1);
+const setSize = (input: unknown): number => (input instanceof Set ? input.size : -1);
+
 function handleArrayResult(result: ParsePayload<any>, final: ParsePayload<any[]>, index: number) {
   if (result.issues.length) {
     final.issues.push(...util.prefixIssues(index, result.issues));
@@ -1676,6 +1703,7 @@ export const $ZodArray: core.$constructor<$ZodArray> = /*@__PURE__*/ core.$const
 
     return payload; //handleArrayResultsAsync(parseResults, final);
   };
+  capSize(inst, arraySize);
 });
 
 //////////////////////////////////////////
@@ -3081,6 +3109,7 @@ export const $ZodMap: core.$constructor<$ZodMap> = /*@__PURE__*/ core.$construct
     if (proms.length) return Promise.all(proms).then(() => payload);
     return payload;
   };
+  capSize(inst, mapSize);
 });
 
 function handleMapResult(
@@ -3175,6 +3204,7 @@ export const $ZodSet: core.$constructor<$ZodSet> = /*@__PURE__*/ core.$construct
     if (proms.length) return Promise.all(proms).then(() => payload);
     return payload;
   };
+  capSize(inst, setSize);
 });
 
 function handleSetResult(result: ParsePayload, final: ParsePayload<Set<any>>) {

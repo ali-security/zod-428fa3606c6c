@@ -846,6 +846,19 @@ export function unwrapMessage(message: string | { message: string } | undefined 
   return typeof message === "string" ? message : message?.message;
 }
 
+/** The leading size checks of `defChecks` that set an upper bound, each paired with it. */
+export function sizeCaps(defChecks: checks.$ZodCheck<never>[] | undefined): [number, checks.$ZodCheck<never>][] {
+  const caps: [number, checks.$ZodCheck<never>][] = [];
+  for (const ch of defChecks ?? []) {
+    const d = ch._zod.def as any;
+    // a later check may rewrite the value
+    if (!/_(length|size)$|_equals$/.test(d.check)) break;
+    const max = d.maximum ?? d.length ?? d.size;
+    if (max >= 0) caps.push([max, ch]);
+  }
+  return caps;
+}
+
 export function finalizeIssue(
   iss: errors.$ZodRawIssue,
   ctx: schemas.ParseContextInternal | undefined,
